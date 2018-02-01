@@ -44,6 +44,7 @@ import json
 import os
 import pkg_resources
 import platform
+import requests
 import shutil
 import subprocess
 import sys
@@ -295,6 +296,31 @@ def validate_github_url(url, url_type):
     return True
 
 
+GIT_TOKENS_PATH = os.path.expanduser('~/.git-tokens')
+LOCUS_GITLAB = 'http://gitlab-ci-token:{}@gitlab.locusbots.io/locusrobotics/{}.git'
+_git_tokens = None
+
+
+def get_git_tokens():
+    global _git_tokens
+    if _git_tokens:
+        return _git_tokens
+    if not os.path.exists(GIT_TOKENS_PATH):
+        return
+    _git_tokens = yaml.load(open(GIT_TOKENS_PATH))
+    return _git_tokens
+
+
+def guess_locus_release_repo(repository):
+    git_tokens = get_git_tokens()
+    if not git_tokens or 'gitlab' not in git_tokens:
+        return
+    url = LOCUS_GITLAB.format(git_tokens['gitlab'], repository + '-release')
+    r = requests.get(url)
+    if r.status_code == requests.codes.ok:
+        return url
+
+
 def get_repo_uri(repository, distro):
     url = None
     # Fetch the distro file
@@ -308,6 +334,9 @@ def get_repo_uri(repository, distro):
         matches = difflib.get_close_matches(repository, distribution_file.repositories)
         if matches:
             info(fmt("@{yf}Did you mean one of these: '" + "', '".join([m for m in matches]) + "'?"))
+    locus_url = guess_locus_release_repo(repository)
+    if locus_url:
+        return locus_url
     if url is None:
         info("Could not determine release repository url for repository '{0}' of distro '{1}'"
              .format(repository, distro))
@@ -1258,7 +1287,7 @@ def get_argument_parser():
     add('repository', help="repository to run bloom on")
     add('--list-tracks', '-l', action='store_true', default=False,
         help="list available tracks for repository")
-    add('--track', '-t', required=True, help="track to run")
+    add('--track', '-t', required=False, help="track to run")
     add('--non-interactive', '-y', action='store_true', default=False)
     add('--ros-distro', '--rosdistro', '-r', required=True,
         help="determines the ROS distro file used")
@@ -1285,6 +1314,8 @@ def main(sysargs=None):
     parser = get_argument_parser()
     parser = add_global_arguments(parser)
     args = parser.parse_args(sysargs)
+    if args.track is None:
+        args.track = args.ros_distro
     handle_global_arguments(args)
 
     if args.list_tracks:
