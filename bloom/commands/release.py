@@ -297,26 +297,11 @@ def validate_github_url(url, url_type):
     return True
 
 
-GIT_TOKENS_PATH = os.path.expanduser('~/.git-tokens')
-LOCUS_GITLAB = 'http://gitlab-ci-token:{}@gitlab.locusbots.io/locusrobotics/{}.git'
-_git_tokens = None
-
-
-def get_git_tokens():
-    global _git_tokens
-    if _git_tokens:
-        return _git_tokens
-    if not os.path.exists(GIT_TOKENS_PATH):
-        return
-    _git_tokens = yaml.load(open(GIT_TOKENS_PATH))
-    return _git_tokens
-
-
-def guess_locus_release_repo(repository):
-    git_tokens = get_git_tokens()
-    if not git_tokens or 'gitlab' not in git_tokens:
-        return
-    url = LOCUS_GITLAB.format(git_tokens['gitlab'], repository + '-release')
+def infer_release_repo_from_env(repository):
+    base = os.environ.get('BLOOM_RELEASE_REPO_BASE', None)
+    if base is None:
+        return None
+    url = base + repository + '-release.git'
     r = requests.get(url)
     if r.status_code == requests.codes.ok:
         return url
@@ -335,9 +320,8 @@ def get_repo_uri(repository, distro):
         matches = difflib.get_close_matches(repository, distribution_file.repositories)
         if matches:
             info(fmt("@{yf}Did you mean one of these: '" + "', '".join([m for m in matches]) + "'?"))
-    locus_url = guess_locus_release_repo(repository)
-    if locus_url:
-        return locus_url
+    if url is None:
+        url = infer_release_repo_from_env(repository)
     if url is None:
         info("Could not determine release repository url for repository '{0}' of distro '{1}'"
              .format(repository, distro))
