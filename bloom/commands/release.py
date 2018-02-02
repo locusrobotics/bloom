@@ -39,6 +39,7 @@ import atexit
 import base64
 import datetime
 import difflib
+import gitlab
 import getpass
 import json
 import os
@@ -753,11 +754,6 @@ def get_gitlab_interface(server, quiet=False):
     global _gl
     if _gl is not None:
         return _gl
-    # Make sure we can import gitlab
-    try:
-        import gitlab
-    except:
-        return None
 
     # Grab the token
     git_tokens = get_git_tokens()

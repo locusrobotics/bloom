@@ -8,6 +8,7 @@ install_requires = [
     'setuptools',
     'empy',
     'python-dateutil',
+    'python-gitlab',
     'PyYAML',
     'rosdep >= 0.10.25',
     'rosdistro >= 0.4.0',
