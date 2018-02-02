@@ -680,20 +680,28 @@ _gh = None
 _gl = None
 
 
-def get_github_interface(quiet=False):
-    global _gh
-    if _gh is not None:
-        return _gh
-    # First check to see if the oauth token is stored
+def get_bloom_config_and_path():
     oauth_config_path = os.path.join(os.path.expanduser('~'), '.config', 'bloom')
     config = {}
     if os.path.exists(oauth_config_path):
         with open(oauth_config_path, 'r') as f:
             config = json.loads(f.read())
-            token = config.get('oauth_token', None)
-            username = config.get('github_user', None)
-            if token and username:
-                return Github(username, auth=auth_header_from_oauth_token(token), token=token)
+    return config, oauth_config_path
+
+
+
+def get_github_interface(quiet=False):
+    global _gh
+    if _gh is not None:
+        return _gh
+    # First check to see if the oauth token is stored
+    config, oauth_config_path = get_bloom_config_and_path()
+    token = config.get('oauth_token', None)
+    username = config.get('github_user', None)
+
+    if token and username:
+        return Github(username, auth=auth_header_from_oauth_token(token), token=token)
+
     if not os.path.isdir(os.path.dirname(oauth_config_path)):
         os.makedirs(os.path.dirname(oauth_config_path))
     if quiet:
@@ -755,11 +763,44 @@ def get_gitlab_interface(server, quiet=False):
     if _gl is not None:
         return _gl
 
-    # Grab the token
-    git_tokens = get_git_tokens()
-    if not git_tokens or 'gitlab' not in git_tokens:
-        return
-    _gl = gitlab.Gitlab(server, private_token=git_tokens['gitlab'], api_version=4)
+    config, oauth_config_path = get_bloom_config_and_path()
+    if 'gitlab' in config:
+        _gl = gitlab.Gitlab(server, private_token=config['gitlab'], api_version=4)
+        return _gl
+
+    if quiet:
+        return None
+
+    info("")
+    warning("Looks like bloom doesn't have a gitlab token for you yet.")
+    warning("Go to http://{}/profile/personal_access_tokens to create one.".format(server))
+    warning("Make sure you give it API access.")
+    warning("The token will be stored in `~/.config/bloom`.")
+    warning("You can delete the token from that file to have a new token generated.")
+    warning("Guard this token like a password, because it allows someone/something to act on your behalf.")
+    info("")
+    if not maybe_continue('y', "Would you like to input a token now"):
+        return None
+    token = None
+    while token is None:
+        try:
+            token = safe_input("Gitlab Token: ")
+        except (KeyboardInterrupt, EOFError):
+            return None
+        try:
+            gl = gitlab.Gitlab(server, private_token=token, api_version=4)
+            gl.auth()
+            with open(oauth_config_path, 'a') as f:
+                config.update({'gitlab': token})
+                f.write(json.dumps(config))
+            info("The token was stored in the bloom config file")
+            _gl = gl
+            break
+        except gitlab.exceptions.GitlabAuthenticationError:
+            error("Failed to authenticate your token.")
+            if not maybe_continue():
+                return None
+
     return _gl
 
 
