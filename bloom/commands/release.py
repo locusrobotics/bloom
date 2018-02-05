@@ -673,7 +673,6 @@ def get_bloom_config_and_path():
     return config, oauth_config_path
 
 
-
 def get_github_interface(quiet=False):
     global _gh
     if _gh is not None:
