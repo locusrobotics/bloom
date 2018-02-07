@@ -715,7 +715,7 @@ def get_github_interface(quiet=False):
         gh = Github(username, auth=auth_header_from_basic_auth(username, password))
         try:
             token = gh.create_new_bloom_authorization(update_auth=True)
-            with open(oauth_config_path, 'a') as f:
+            with open(oauth_config_path, 'w') as f:
                 config.update({'oauth_token': token, 'github_user': username})
                 f.write(json.dumps(config))
             info("The token '{token}' was created and stored in the bloom config file: '{oauth_config_path}'"
@@ -773,7 +773,7 @@ def get_gitlab_interface(server, quiet=False):
         try:
             gl = gitlab.Gitlab(server, private_token=token, api_version=4)
             gl.auth()
-            with open(oauth_config_path, 'a') as f:
+            with open(oauth_config_path, 'w') as f:
                 config.update({'gitlab': token})
                 f.write(json.dumps(config))
             info("The token was stored in the bloom config file")
