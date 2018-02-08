@@ -39,7 +39,6 @@ import atexit
 import base64
 import datetime
 import difflib
-import gitlab
 import getpass
 import json
 import os
@@ -79,6 +78,10 @@ from bloom.github import auth_header_from_oauth_token
 from bloom.github import Github
 from bloom.github import GithubException
 from bloom.github import GitHubAuthException
+
+from bloom.gitlab import Gitlab
+from bloom.gitlab import GitlabException
+from bloom.gitlab import GitlabAuthException
 
 from bloom.logging import debug
 from bloom.logging import error
@@ -742,7 +745,7 @@ def get_gitlab_interface(server, quiet=False):
 
     config, oauth_config_path = get_bloom_config_and_path()
     if 'gitlab' in config:
-        _gl = gitlab.Gitlab(server, private_token=config['gitlab'], api_version=4)
+        _gl = Gitlab(server, token=config['gitlab'])
         return _gl
 
     if quiet:
@@ -765,7 +768,7 @@ def get_gitlab_interface(server, quiet=False):
         except (KeyboardInterrupt, EOFError):
             return None
         try:
-            gl = gitlab.Gitlab(server, private_token=token, api_version=4)
+            gl = Gitlab(server, token=token)
             gl.auth()
             with open(oauth_config_path, 'w') as f:
                 config.update({'gitlab': token})
@@ -773,7 +776,7 @@ def get_gitlab_interface(server, quiet=False):
             info("The token was stored in the bloom config file")
             _gl = gl
             break
-        except gitlab.exceptions.GitlabAuthenticationError:
+        except GitlabAuthException:
             error("Failed to authenticate your token.")
             if not maybe_continue():
                 return None
@@ -965,35 +968,21 @@ Increasing version of package(s) in repository `{repository}` to `{version}`:
         if gl is None:
             return None
 
-        project = gl.projects.get('{}/{}'.format(base_org, base_repo))
+        repo_obj = gl.get_repo(base_org, base_repo)
 
         # Determine New Branch Name
-        branches = [x.name for x in project.branches.list()]
+        branches = gl.list_branches(repo_obj)
         new_branch = 'bloom-{repository}-{count}'
         count = 0
         while new_branch.format(repository=repository, count=count) in branches:
             count += 1
         new_branch = new_branch.format(repository=repository, count=count)
 
-        branch = project.branches.create({'branch': new_branch, 'ref': base_branch})
-        data = {
-            'branch': new_branch,  # v4
-            'commit_message': title,
-            'actions': [
-                {
-                    'action': 'update',
-                    'file_path': base_path,
-                    'content': updated_distro_file_yaml
-                }
-            ]
-        }
+        gl.create_branch(repo_obj, new_branch, base_branch)
+        gl.update_file(repo_obj, new_branch, title, base_path, updated_distro_file_yaml)
 
-        commit = project.commits.create(data)
-        mr = project.mergerequests.create({'source_branch': new_branch,
-                                           'target_branch': base_branch,
-                                           'title': title,
-                                           'description': body})
-        return mr.web_url
+        mr = gl.create_pull_request(repo_obj, new_branch, base_branch, title, body)
+        return mr['web_url']
 
 
 _original_version = None
