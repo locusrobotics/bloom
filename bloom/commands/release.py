@@ -999,7 +999,7 @@ Increasing version of package(s) in repository `{repository}` to `{version}`:
                                            'target_branch': base_branch,
                                            'title': title,
                                            'description': body,
-                                           'remove_source_brach': True})
+                                           'remove_source_branch': True})
         return mr.web_url
 
 
