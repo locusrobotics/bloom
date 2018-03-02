@@ -998,7 +998,8 @@ Increasing version of package(s) in repository `{repository}` to `{version}`:
         mr = project.mergerequests.create({'source_branch': new_branch,
                                            'target_branch': base_branch,
                                            'title': title,
-                                           'description': body})
+                                           'description': body,
+                                           'remove_source_branch': True})
         return mr.web_url
 
 
