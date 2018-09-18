@@ -659,8 +659,18 @@ def get_gh_info(url):
         return None, None, None, None
     url_paths = o.path.split('/')
     if len(url_paths) < 5:
-        return None, None, None, None
-    return url_paths[1], url_paths[2], url_paths[3], '/'.join(url_paths[4:])
+        return None
+    return {'server': 'github.com'
+            'org': url_paths[1],
+            'repo': url_paths[2],
+            'branch': url_paths[3],
+            'path': '/'.join(url_paths[4:])}
+
+
+def get_repo_info(distro_url):
+    gh_info = get_gh_info(distro_url)
+    if gh_info:
+        return gh_info
 
 
 _gh = None
@@ -795,10 +805,8 @@ def open_pull_request(track, repository, distro, interactive, override_release_r
 
     # Determine where the distro file is hosted...
     distro_url = get_distribution_file_url(distro)
-    base_org, base_repo, base_branch, base_path = get_gh_info(distro_url)
-    if None not in [base_org, base_repo, base_branch, base_path]:
-        server = 'http://github.com'
-    else:
+    base_repo_info = get_repo_info(distro_url)
+    if not base_repo_info:
         warning("Automated pull request only available via github.com")
         return
 
@@ -828,7 +836,7 @@ Increasing version of package(s) in repository `{repository}` to `{version}`:
     )
     body += get_changelog_summary(generate_release_tag(distro))
 
-    if server == 'http://github.com':
+    if base_repo_info['server'] == 'github.com':
         # Get the github interface
         gh = get_github_interface()
         if gh is None:
