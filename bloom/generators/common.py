@@ -35,6 +35,7 @@ from __future__ import print_function
 import pkg_resources
 import sys
 import traceback
+import os
 
 from bloom.logging import debug
 from bloom.logging import error
@@ -57,6 +58,7 @@ except ImportError as err:
     debug(traceback.format_exc())
     error("rosdep was not detected, please install it.", exit=True)
 
+ALLOW_MISSING_ROSDEP = os.getenv("BLOOM_ALLOW_MISSING_ROSDEP", "1") == "1"
 BLOOM_GROUP = 'bloom.generators'
 DEFAULT_ROS_DISTRO = 'indigo'
 
@@ -198,31 +200,32 @@ def resolve_rosdep_key(
         return resolve_more_for_os(key, view, installer, os_name, os_version)
     except (KeyError, ResolutionError) as exc:
         debug(traceback.format_exc())
-        if key in ignored:
+
+        if key in (ignored or []):
             return None, None, None
-        if isinstance(exc, KeyError):
-            error("Could not resolve rosdep key '{0}'".format(key))
-            returncode = code.GENERATOR_NO_SUCH_ROSDEP_KEY
+
+        if ALLOW_MISSING_ROSDEP:
+            safe_key = key.lower().replace('_', '-')
+            # Construct a fallback Debian package name
+            deb_name = f"ros-{ros_distro}-{safe_key}"
+
+            debug(f"Using fallback dependency name: {deb_name}")
+            return [deb_name], installer_key, None
         else:
-            error("Could not resolve rosdep key '{0}' for distro '{1}':"
-                  .format(key, os_version))
-            info(str(exc), use_prefix=False)
-            returncode = code.GENERATOR_NO_ROSDEP_KEY_FOR_DISTRO
-        if retry:
+            error(f"Could not resolve rosdep key '{key}'")
             error("Try to resolve the problem with rosdep and then continue.")
-            if maybe_continue():
-                update_rosdep()
-                invalidate_view_cache()
-                return resolve_rosdep_key(key, os_name, os_version, ros_distro,
-                                          ignored, retry=True)
-        BloomGenerator.exit("Failed to resolve rosdep key '{0}', aborting."
-                            .format(key), returncode=returncode)
+            if retry:
+                if maybe_continue():
+                    update_rosdep()
+                    invalidate_view_cache()
+                    return resolve_rosdep_key(key, os_name, os_version, ros_distro, ignored, retry=True)
+            BloomGenerator.exit(f"Failed to resolve rosdep key '{key}', aborting.",
+                                returncode=code.GENERATOR_NO_SUCH_ROSDEP_KEY)
 
 
 def default_fallback_resolver(key, peer_packages):
     BloomGenerator.exit("Failed to resolve rosdep key '{0}', aborting."
                         .format(key), returncode=code.GENERATOR_NO_SUCH_ROSDEP_KEY)
-
 
 def resolve_dependencies(
     keys,
@@ -234,21 +237,46 @@ def resolve_dependencies(
 ):
     ros_distro = ros_distro or DEFAULT_ROS_DISTRO
     peer_packages = peer_packages or []
-    fallback_resolver = fallback_resolver or default_fallback_resolver
+
+    # Default fallback creates a valid ROS package name
+    def default_fallback(key, peer_packages=None):
+        clean_key = str(key).strip()
+        if not clean_key or clean_key in ("-", "_"):
+            return None
+        return [f"ros-{ros_distro}-{clean_key.lower().replace('_', '-')}"]
+
+    fallback_resolver = default_fallback
 
     resolved_keys = {}
-    keys = [k.name for k in keys]
-    for key in keys:
-        resolved_key, installer_key, default_installer_key = \
-            resolve_rosdep_key(key, os_name, os_version, ros_distro,
-                               peer_packages, retry=True)
-        # Do not compare the installer key here since this is a general purpose function
-        # They installer is verified in the OS specific generator, when the keys are pre-checked.
+
+    # Filter out placeholders and duplicates
+    cleaned_keys = []
+    seen = set()
+    for k in keys:
+        key_name = k.name if hasattr(k, "name") else str(k)
+        key_name = key_name.strip()
+        if not key_name or key_name in ("-", "_") or key_name in seen:
+            continue
+        cleaned_keys.append(key_name)
+        seen.add(key_name)
+
+    # Resolve each key
+    for key in cleaned_keys:
+        print(f"Key: {key}")
+        try:
+            resolved_key, installer_key, default_installer_key = \
+                resolve_rosdep_key(key, os_name, os_version, ros_distro,
+                                   peer_packages, retry=True)
+        except Exception:
+            print(f"Could not resolve key {key}")
+            resolved_key = None
+
         if resolved_key is None:
             resolved_key = fallback_resolver(key, peer_packages)
-        resolved_keys[key] = resolved_key
-    return resolved_keys
 
+        resolved_keys[key] = resolved_key
+
+    return resolved_keys
 
 class GeneratorError(Exception):
     def __init__(self, msg, returncode=code.UNKNOWN):
